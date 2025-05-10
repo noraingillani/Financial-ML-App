@@ -6,7 +6,7 @@
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 import streamlit as st
 
-# Must be the first Streamlit command
+# 1. MUST BE FIRST STREAMLIT COMMAND
 st.set_page_config(
     page_title="Universal ML Processor",
     page_icon="🤖",
@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Rest of imports
+# 2. Other imports AFTER page config
 import pandas as pd
 import numpy as np
 import joblib
@@ -30,14 +30,13 @@ from sklearn.ensemble import (
     RandomForestRegressor, 
     RandomForestClassifier
 )
-
+from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     mean_squared_error, r2_score, mean_absolute_error,
     confusion_matrix, classification_report
 )
 import plotly.express as px
-import plotly.figure_factory as ff
 import seaborn as sns
 import matplotlib.pyplot as plt
 import shap
