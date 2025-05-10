@@ -3,20 +3,7 @@
 # **Author:** Your Name  
 # **Universal ML Processor**  
 
-from streamlit.runtime.scriptrunner import add_script_run_ctx
 import streamlit as st
-
-# SINGLE PAGE CONFIG - MUST BE FIRST STREAMLIT COMMAND
-st.set_page_config(
-    page_title="Universal ML Processor",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Rest of imports follow...
-
-# 2. Other imports AFTER page config
 import pandas as pd
 import numpy as np
 import joblib
@@ -26,19 +13,14 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
-from sklearn.ensemble import (
-    GradientBoostingRegressor, 
-    GradientBoostingClassifier, 
-    RandomForestRegressor, 
-    RandomForestClassifier
-)
-from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     mean_squared_error, r2_score, mean_absolute_error,
     confusion_matrix, classification_report
 )
 import plotly.express as px
+import plotly.figure_factory as ff
 import seaborn as sns
 import matplotlib.pyplot as plt
 import shap
@@ -142,9 +124,8 @@ def train_model(X, y, problem_type):
     if "Forest" in model_type or "Boosting" in model_type:
         params['n_estimators'] = st.sidebar.slider("Number of Trees", 50, 500, 100)
         params['max_depth'] = st.sidebar.slider("Max Depth", 2, 20, 5)
-        params['random_state'] = 42  # Added for reproducibility
     
-    # Model selection with proper class references
+    # Model selection
     if problem_type == "Regression":
         models = {
             "Random Forest": RandomForestRegressor(**params),
@@ -275,9 +256,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# %% [markdown]
-## 4. Themed GIFs and Images
-
-# Display a finance-themed GIF at start/end
-st.image("https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif", use_column_width=True)
