@@ -84,22 +84,37 @@ if st.button("2. Preprocessing"):
         st.success("Preprocessing complete: missing values dropped.")
         st.dataframe(df_clean.head())
 
-# 3. Feature Engineering
+# 3. Feature Engineering (Modified with error handling)
 if st.button("3. Feature Engineering"):
     if st.session_state.data is None:
         st.error("Run preprocessing first.")
     else:
         df = st.session_state.data.copy()
-        # Create target: 1 if next-day close > today
-        df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-        # Simple features: 10-day MA and daily return
-        df['MA10'] = df['Close'].rolling(window=10).mean()
-        df['Return'] = df['Close'].pct_change()
-        df = df.dropna()
-        st.session_state.features = ['MA10', 'Return']
-        st.session_state.data = df
-        st.success("Features engineered: MA10, Return, Target.")
-        st.dataframe(df[['MA10', 'Return', 'Target']].head())
+        
+        # Check for required columns
+        required_columns = {'Close'}
+        missing_columns = required_columns - set(df.columns)
+        
+        if missing_columns:
+            st.error(f"Missing required columns: {', '.join(missing_columns)}")
+            st.write("Available columns:", list(df.columns))
+            st.stop()
+            
+        try:
+            # Create target: 1 if next-day close > today
+            df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+            # Simple features: 10-day MA and daily return
+            df['MA10'] = df['Close'].rolling(window=10).mean()
+            df['Return'] = df['Close'].pct_change()
+            df = df.dropna()
+            st.session_state.features = ['MA10', 'Return']
+            st.session_state.data = df
+            st.success("Features engineered: MA10, Return, Target.")
+            st.dataframe(df[['MA10', 'Return', 'Target']].head())
+            
+        except Exception as e:
+            st.error(f"Error in feature engineering: {str(e)}")
+            st.stop()
 
 # 4. Train/Test Split
 if st.button("4. Train/Test Split"):
