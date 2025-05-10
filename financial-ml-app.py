@@ -256,3 +256,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# %% [markdown]
+## 4. Themed GIFs and Images
+
+# Display a finance-themed GIF at start/end
+st.image("https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif", use_column_width=True)
