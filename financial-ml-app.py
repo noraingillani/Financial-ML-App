@@ -1,342 +1,262 @@
-from streamlit.runtime.scriptrunner import add_script_run_ctx
+# %% [markdown]
+# AF3005 – Machine Learning Application
+# **Author:** Your Name  
+# **Universal ML Processor**  
+
 import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+import yfinance as yf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    mean_squared_error, r2_score, mean_absolute_error,
+    confusion_matrix, classification_report
+)
+import plotly.express as px
+import plotly.figure_factory as ff
+import seaborn as sns
+import matplotlib.pyplot as plt
+import shap
+
+# Configure app
 st.set_page_config(
-    page_title="💰 Smart Budget Tracker | AF3005",
-    page_icon="💸",
+    page_title="Universal ML Processor",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import joblib
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.cluster import KMeans
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, mean_squared_error
-import plotly.express as px
-import matplotlib.pyplot as pl
 
-# %% [markdown]
-## 2. Sidebar: Data Input & Settings
-
-st.sidebar.title("Data Input & Settings")
-# File uploader for Kragle dataset
-dataset_file = st.sidebar.file_uploader("Upload Kaggle dataset", type=["csv", "xlsx"])
-# Ticker input
-ticker = st.sidebar.text_input("Yahoo Finance Ticker", value="AAPL")
-# Fetch button
-fetch_data = st.sidebar.button("Fetch Data")
-# Auto-refresh interval (in seconds)
-update_freq = st.sidebar.slider("Auto-refresh interval (sec)", 30, 600, 300, 30)
-
-# Session state initialization
+# Initialize session state
 if 'data' not in st.session_state:
     st.session_state.data = None
 if 'model' not in st.session_state:
     st.session_state.model = None
-if 'features' not in st.session_state:
-    st.session_state.features = []
-if 'model_type' not in st.session_state:
-    st.session_state.model_type = None
+if 'target' not in st.session_state:
+    st.session_state.target = None
+if 'problem_type' not in st.session_state:
+    st.session_state.problem_type = None
 
 # %% [markdown]
-## 3. Step-by-Step ML Pipeline
+## 1. Universal Data Loader
 
-st.header("Machine Learning Pipeline")
-
-# 1. Load Data
-if st.button("1. Load Data"):
-    # From uploaded file
-    if dataset_file:
-        if dataset_file.name.endswith('.csv'):
-            df = pd.read_csv(dataset_file)
-        else:
-            df = pd.read_excel(dataset_file)
-        st.success("Kragle dataset loaded!")
-    # Or fetch via yfinance with TTL cache
-    else:
-        @st.cache(ttl=update_freq)
-        def load_yf(ticker):
-            df = yf.download(ticker, period="1y", interval="1d")
-            df.reset_index(inplace=True)
+def load_data():
+    st.sidebar.header("Data Input")
+    source = st.sidebar.radio("Data Source", ["Upload File", "Yahoo Finance"])
+    
+    if source == "Upload File":
+        file = st.sidebar.file_uploader("Upload Dataset", type=["csv", "xlsx"])
+        if file:
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file)
             return df
-        df = load_yf(ticker)
-        st.success(f"Yahoo Finance data for {ticker} loaded!")
-    st.session_state.data = df
-    st.dataframe(df.head())
-
-# Enhanced Preprocessing
-def preprocess(df: pd.DataFrame) -> pd.DataFrame:
-    with st.expander("Preprocessing Details", expanded=True):
-        st.subheader("Data Cleaning Pipeline")
-        
-        # Missing values handling
-        missing = df.isnull().sum()
-        st.write("Missing Values Before Treatment:", missing)
-        
-        # Numeric imputation
-        num_cols = df.select_dtypes(include=np.number).columns
-        df[num_cols] = df[num_cols].fillna(df[num_cols].median())
-        
-        # Categorical handling
-        cat_cols = df.select_dtypes(exclude=np.number).columns
-        if not cat_cols.empty:
-            df = pd.get_dummies(df, columns=cat_cols, drop_first=True)
-            st.write("Created dummy variables for:", list(cat_cols))
-        
-        # Outlier detection
-        st.write("Outlier Analysis (Z-scores > 3):")
-        z = np.abs((df[num_cols] - df[num_cols].mean())/df[num_cols].std())
-        st.write(z[z > 3].count())
-        
-        st.success("Preprocessing complete!")
-        return df
-
-# 3. Feature Engineering for Mental Health Dataset
-if st.button("3. Feature Engineering"):
-    if st.session_state.data is None:
-        st.error("Run preprocessing first.")
     else:
-        df = st.session_state.data.copy()
-        
-        # Check for required columns
-        required_columns = {'mental_health_score', 'stress_level', 'sleep_quality'}
-        missing_columns = required_columns - set(df.columns)
-        
-        if missing_columns:
-            st.error(f"Missing required columns: {', '.join(missing_columns)}")
-            st.write("Available columns:", list(df.columns))
-            st.stop()
-            
-        try:
-            # Create target: Mental health score (regression)
-            df['target'] = df['mental_health_score']
-            
-            # Feature 1: Total screen time
-            df['total_screen_time'] = (
-                df['daily_screen_time_hours'] + 
-                df['phone_usage_hours'] + 
-                df['laptop_usage_hours'] +
-                df['tablet_usage_hours'] +
-                df['tv_usage_hours']
-            )
-            
-            # Feature 2: Sleep efficiency ratio
-            df['sleep_efficiency'] = df['sleep_quality'] / df['sleep_duration_hours']
-            
-            # Feature 3: Stress-sleep interaction
-            df['stress_sleep_interaction'] = df['stress_level'] * df['sleep_quality']
-            
-            # Feature 4: Healthy lifestyle score
-            df['healthy_lifestyle'] = (
-                df['physical_activity_hours_per_week'] +
-                df['mindfulness_minutes_per_day']/60 +
-                df['eats_healthy'] * 2
-            )
-            
-            # Select final features
-            st.session_state.features = [
-                'total_screen_time',
-                'sleep_efficiency',
-                'stress_sleep_interaction',
-                'healthy_lifestyle'
-            ]
-            
-            st.session_state.data = df.dropna()
-            st.success(f"Features engineered: {', '.join(st.session_state.features)}")
-            st.dataframe(df[st.session_state.features + ['target']].head())
-            
-        except Exception as e:
-            st.error(f"Error in feature engineering: {str(e)}")
-            st.stop()
-# 4. Updated Train/Test Split
-if st.button("4. Train/Test Split"):
-    if st.session_state.data is None:
-        st.error("Preprocess data first.")
-    else:
-        df = st.session_state.data
-        # Check for required components
-        if 'target' not in df.columns or not st.session_state.features:
-            st.error("Run feature engineering first.")
-            st.write("Current dataframe columns:", list(df.columns))
-            st.write("Available features:", st.session_state.features)
-            st.stop()
-            
-        try:
-            X = df[st.session_state.features]
-            y = df['target']
-            
-            if X.empty or y.empty:
-                st.error("Features/target are empty - check feature engineering")
-                st.stop()
-                
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, 
-                test_size=0.2, 
-                random_state=42,
-                stratify=y if st.session_state.model_type == 'Logistic Regression' else None
-            )
-            
-            st.session_state.X_train = X_train
-            st.session_state.X_test = X_test
-            st.session_state.y_train = y_train
-            st.session_state.y_test = y_test
-            
-            fig = px.pie(names=['Train', 'Test'], 
-                        values=[len(X_train), len(X_test)],
-                        title=f'Train/Test Split ({len(X_train)}/{len(X_test)})')
-            st.plotly_chart(fig)
-            
-        except Exception as e:
-            st.error(f"Split failed: {str(e)}")
-            st.stop()
+        ticker = st.sidebar.text_input("Enter Ticker Symbol", "AAPL")
+        days = st.sidebar.slider("Historical Days", 30, 365*5, 365)
+        if ticker:
+            @st.cache(ttl=3600)
+            def fetch_yfinance(ticker, days):
+                df = yf.download(ticker, period=f"{days}d")
+                df.reset_index(inplace=True)
+                return df
+            return fetch_yfinance(ticker, days)
+    return None
 
-# Enhanced Model Training
-if st.button("5. Model Training"):
-    if 'X_train' not in st.session_state:
-        st.error("Split data first.")
-    else:
-        model_choice = st.sidebar.selectbox("Choose Model", [
-            'Linear Regression', 
-            'Random Forest', 
-            'Gradient Boosting',
-            'Support Vector Regression'
-        ])
-        
-        # Model configuration
-        with st.sidebar.expander("Hyperparameters"):
-            if model_choice == 'Random Forest':
-                n_estimators = st.slider("Trees", 50, 500, 100)
-                max_depth = st.slider("Max Depth", 2, 20, 5)
-                
-        # Model initialization
-        model_configs = {
-            'Linear Regression': LinearRegression(),
-            'Random Forest': RandomForestRegressor(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                random_state=42
-            ),
-            'Gradient Boosting': GradientBoostingRegressor(
-                n_estimators=100,
-                learning_rate=0.1,
-                random_state=42
-            ),
-            'Support Vector Regression': SVR(kernel='rbf', C=100)
+# %% [markdown]
+## 2. Smart Preprocessing
+
+def auto_preprocess(df):
+    st.header("Data Preprocessing")
+    
+    # Display raw data
+    with st.expander("Raw Data Preview"):
+        st.dataframe(df.head())
+        st.write(f"Shape: {df.shape}")
+    
+    # Auto-detect column types
+    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+    cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
+    
+    # Missing value treatment
+    st.subheader("Missing Values Handling")
+    missing = df.isna().sum()
+    st.write("Missing Values Count:", missing[missing > 0])
+    
+    # Numeric preprocessing
+    numeric_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler())])
+    
+    # Categorical preprocessing
+    categorical_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='most_frequent')),
+        ('onehot', OneHotEncoder(handle_unknown='ignore'))])
+    
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', numeric_transformer, numeric_cols),
+            ('cat', categorical_transformer, cat_cols)])
+    
+    with st.spinner("Preprocessing data..."):
+        processed_data = preprocessor.fit_transform(df)
+    
+    st.success("Preprocessing completed!")
+    return preprocessor, processed_data
+
+# %% [markdown]
+## 3. Adaptive Model Training
+
+def train_model(X, y, problem_type):
+    st.sidebar.header("Model Configuration")
+    
+    model_type = st.sidebar.selectbox("Select Model Type",
+        ["Random Forest", "Gradient Boosting", "Logistic Regression", "Linear Regression"])
+    
+    params = {}
+    if "Forest" in model_type or "Boosting" in model_type:
+        params['n_estimators'] = st.sidebar.slider("Number of Trees", 50, 500, 100)
+        params['max_depth'] = st.sidebar.slider("Max Depth", 2, 20, 5)
+    
+    # Model selection
+    if problem_type == "Regression":
+        models = {
+            "Random Forest": RandomForestRegressor(**params),
+            "Gradient Boosting": GradientBoostingRegressor(**params),
+            "Linear Regression": LinearRegression()
         }
-        
-        # Training with progress
-        progress_bar = st.progress(0)
-        model = model_configs[model_choice]
-        
-        with st.spinner(f"Training {model_choice}..."):
-            model.fit(st.session_state.X_train, st.session_state.y_train)
-            progress_bar.progress(100)
-            
-        st.session_state.model = model
-        st.success(f"{model_choice} trained successfully!")
-
-# Enhanced Evaluation
-if st.button("6. Evaluation"):
-    if st.session_state.model is None:
-        st.error("Train a model first.")
     else:
-        model = st.session_state.model
-        X_test = st.session_state.X_test
-        y_test = st.session_state.y_test
+        models = {
+            "Random Forest": RandomForestClassifier(**params),
+            "Gradient Boosting": GradientBoostingClassifier(**params),
+            "Logistic Regression": LogisticRegression(max_iter=1000)
+        }
+    
+    model = models[model_type]
+    
+    with st.spinner(f"Training {model_type}..."):
+        model.fit(X, y)
+    
+    return model
+
+# %% [markdown]
+## 4. Intelligent Evaluation
+
+def evaluate_model(model, X_test, y_test, problem_type):
+    st.header("Model Evaluation")
+    
+    y_pred = model.predict(X_test)
+    
+    if problem_type == "Regression":
+        col1, col2, col3 = st.columns(3)
+        col1.metric("MSE", f"{mean_squared_error(y_test, y_pred):.2f}")
+        col2.metric("R² Score", f"{r2_score(y_test, y_pred):.2f}")
+        col3.metric("MAE", f"{mean_absolute_error(y_test, y_pred):.2f}")
         
-        y_pred = model.predict(X_test)
-        
-        # Metrics
-        mse = mean_squared_error(y_test, y_pred)
-        r2 = r2_score(y_test, y_pred)
-        mae = mean_absolute_error(y_test, y_pred)
+        fig = px.scatter(x=y_test, y=y_pred, 
+                        labels={'x': 'Actual', 'y': 'Predicted'},
+                        title="Actual vs Predicted Values")
+        st.plotly_chart(fig)
+    else:
+        st.subheader("Classification Metrics")
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, average='weighted')
+        rec = recall_score(y_test, y_pred, average='weighted')
         
         col1, col2, col3 = st.columns(3)
-        col1.metric("MSE", f"{mse:.2f}")
-        col2.metric("R² Score", f"{r2:.2f}")
-        col3.metric("MAE", f"{mae:.2f}")
+        col1.metric("Accuracy", f"{acc:.2%}")
+        col2.metric("Precision", f"{prec:.2%}")
+        col3.metric("Recall", f"{rec:.2%}")
         
-        # Visualization
-        fig = px.scatter(
-            x=y_test, y=y_pred,
-            trendline="ols",
-            labels={'x': 'Actual', 'y': 'Predicted'},
-            title="Actual vs Predicted Values"
-        )
+        st.subheader("Confusion Matrix")
+        cm = confusion_matrix(y_test, y_pred)
+        fig = px.imshow(cm, text_auto=True, 
+                       labels=dict(x="Predicted", y="Actual"),
+                       title="Confusion Matrix")
         st.plotly_chart(fig)
+    
+    # Feature Importance
+    if hasattr(model, 'feature_importances_'):
+        st.subheader("Feature Importance")
+        importance = pd.DataFrame({
+            'Feature': X_test.columns,
+            'Importance': model.feature_importances_
+        }).sort_values('Importance', ascending=False)
         
-        # Feature Importance
-        if hasattr(model, 'feature_importances_'):
-            importance = pd.DataFrame({
-                'Feature': st.session_state.features,
-                'Importance': model.feature_importances_
-            }).sort_values('Importance', ascending=False)
-            
-            fig = px.bar(
-                importance, 
-                x='Importance', 
-                y='Feature', 
-                orientation='h',
-                title="Feature Importance Analysis"
-            )
-            st.plotly_chart(fig)
+        fig = px.bar(importance, x='Importance', y='Feature', 
+                     orientation='h', title="Feature Importance")
+        st.plotly_chart(fig)
+    
+    # SHAP Explanations
+    st.subheader("Model Explanations (SHAP)")
+    explainer = shap.Explainer(model)
+    shap_values = explainer(X_test)
+    fig, ax = plt.subplots()
+    shap.summary_plot(shap_values, X_test, plot_type="bar", show=False)
+    st.pyplot(fig)
 
+# %% [markdown]
+## 5. Main Application Flow
 
-# Enhanced Results Visualization
-if st.button("7. Results Visualization"):
-    if st.session_state.model is None:
-        st.error("Train and evaluate first.")
-    else:
-        # Interactive prediction explorer
-        st.subheader("Prediction Explorer")
+def main():
+    st.title("Universal Machine Learning Processor")
+    
+    # Step 1: Load Data
+    df = load_data()
+    if df is not None:
+        st.session_state.data = df
+    
+    if st.session_state.data is not None:
+        # Step 2: Preprocessing
+        preprocessor, processed_data = auto_preprocess(st.session_state.data)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            feature_inputs = {}
-            for feature in st.session_state.features:
-                data_min = st.session_state.X_train[feature].min()
-                data_max = st.session_state.X_train[feature].max()
-                feature_inputs[feature] = st.slider(
-                    f"{feature}",
-                    min_value=float(data_min),
-                    max_value=float(data_max),
-                    value=float(st.session_state.X_train[feature].median())
-                )
+        # Step 3: Target Selection
+        target = st.selectbox("Select Target Variable", 
+                             st.session_state.data.columns)
+        st.session_state.target = target
         
-        with col2:
-            input_df = pd.DataFrame([feature_inputs])
-            prediction = st.session_state.model.predict(input_df)[0]
-            st.metric("Predicted Mental Health Score", 
-                      f"{prediction:.1f}",
-                      help="Higher scores indicate better mental health")
-            
-            # Explanation
-            if hasattr(st.session_state.model, 'predict_proba'):
-                explainer = shap.Explainer(st.session_state.model)
-                shap_values = explainer(input_df)
-                fig, ax = plt.subplots()
-                shap.plots.waterfall(shap_values[0], show=False)
-                st.pyplot(fig)
+        # Detect problem type
+        if pd.api.types.is_numeric_dtype(st.session_state.data[target]):
+            unique_values = st.session_state.data[target].nunique()
+            st.session_state.problem_type = "Regression" if unique_values > 10 else "Classification"
+        else:
+            st.session_state.problem_type = "Classification"
         
-        # Downloadable report
-        report = f"""
-        Model Evaluation Report
-        ------------------------
-        Model Type: {st.session_state.model_type}
-        Features Used: {', '.join(st.session_state.features)}
-        
-        Performance Metrics:
-        - Mean Squared Error: {mse:.2f}
-        - R² Score: {r2:.2f}
-        - Mean Absolute Error: {mae:.2f}
-        """
-        st.download_button(
-            "Download Evaluation Report",
-            data=report,
-            file_name="mental_health_model_report.txt"
+        # Step 4: Train/Test Split
+        test_size = st.slider("Test Size Ratio", 0.1, 0.5, 0.2)
+        X_train, X_test, y_train, y_test = train_test_split(
+            processed_data, st.session_state.data[target],
+            test_size=test_size, random_state=42
         )
+        
+        # Step 5: Model Training
+        if st.button("Train Model"):
+            model = train_model(X_train, y_train, st.session_state.problem_type)
+            st.session_state.model = model
+        
+        # Step 6: Evaluation
+        if st.session_state.model is not None:
+            evaluate_model(st.session_state.model, X_test, y_test, 
+                          st.session_state.problem_type)
+            
+            # Step 7: Save Model
+            st.download_button(
+                label="Download Trained Model",
+                data=joblib.dump(st.session_state.model),
+                file_name="trained_model.pkl",
+                mime="application/octet-stream"
+            )
+
+if __name__ == "__main__":
+    main()
+
 # %% [markdown]
 ## 4. Themed GIFs and Images
 
