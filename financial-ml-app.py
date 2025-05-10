@@ -22,7 +22,7 @@ import matplotlib.pyplot as pl
 
 st.sidebar.title("Data Input & Settings")
 # File uploader for Kragle dataset
-dataset_file = st.sidebar.file_uploader("Upload Kragle dataset", type=["csv", "xlsx"])
+dataset_file = st.sidebar.file_uploader("Upload Kaggle dataset", type=["csv", "xlsx"])
 # Ticker input
 ticker = st.sidebar.text_input("Yahoo Finance Ticker", value="AAPL")
 # Fetch button
@@ -66,23 +66,32 @@ if st.button("1. Load Data"):
     st.session_state.data = df
     st.dataframe(df.head())
 
-# 2. Preprocessing
+# Enhanced Preprocessing
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
-    # Display missing value statistics
-    missing = df.isnull().sum()
-    st.write("Missing values per column:", missing)
-    # Drop missing rows for simplicity
-    df_clean = df.dropna()
-    return df_clean
-
-if st.button("2. Preprocessing"):
-    if st.session_state.data is None:
-        st.error("Load data first.")
-    else:
-        df_clean = preprocess(st.session_state.data)
-        st.session_state.data = df_clean
-        st.success("Preprocessing complete: missing values dropped.")
-        st.dataframe(df_clean.head())
+    with st.expander("Preprocessing Details", expanded=True):
+        st.subheader("Data Cleaning Pipeline")
+        
+        # Missing values handling
+        missing = df.isnull().sum()
+        st.write("Missing Values Before Treatment:", missing)
+        
+        # Numeric imputation
+        num_cols = df.select_dtypes(include=np.number).columns
+        df[num_cols] = df[num_cols].fillna(df[num_cols].median())
+        
+        # Categorical handling
+        cat_cols = df.select_dtypes(exclude=np.number).columns
+        if not cat_cols.empty:
+            df = pd.get_dummies(df, columns=cat_cols, drop_first=True)
+            st.write("Created dummy variables for:", list(cat_cols))
+        
+        # Outlier detection
+        st.write("Outlier Analysis (Z-scores > 3):")
+        z = np.abs((df[num_cols] - df[num_cols].mean())/df[num_cols].std())
+        st.write(z[z > 3].count())
+        
+        st.success("Preprocessing complete!")
+        return df
 
 # 3. Feature Engineering for Mental Health Dataset
 if st.button("3. Feature Engineering"):
@@ -183,98 +192,151 @@ if st.button("4. Train/Test Split"):
             st.error(f"Split failed: {str(e)}")
             st.stop()
 
-# 5. Model Training
+# Enhanced Model Training
 if st.button("5. Model Training"):
     if 'X_train' not in st.session_state:
         st.error("Split data first.")
     else:
-        # Dynamic model selection
-        model_choice = st.sidebar.selectbox("Choose Model", ['Logistic Regression', 'Linear Regression', 'K-Means Clustering'])
-        st.session_state.model_type = model_choice
-        if model_choice == 'Logistic Regression':
-            model = LogisticRegression()
-        elif model_choice == 'Linear Regression':
-            model = LinearRegression()
-        else:
-            model = KMeans(n_clusters=2)
-        # Fit model
-        if model_choice == 'K-Means Clustering':
-            model.fit(st.session_state.X_train)
-        else:
+        model_choice = st.sidebar.selectbox("Choose Model", [
+            'Linear Regression', 
+            'Random Forest', 
+            'Gradient Boosting',
+            'Support Vector Regression'
+        ])
+        
+        # Model configuration
+        with st.sidebar.expander("Hyperparameters"):
+            if model_choice == 'Random Forest':
+                n_estimators = st.slider("Trees", 50, 500, 100)
+                max_depth = st.slider("Max Depth", 2, 20, 5)
+                
+        # Model initialization
+        model_configs = {
+            'Linear Regression': LinearRegression(),
+            'Random Forest': RandomForestRegressor(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                random_state=42
+            ),
+            'Gradient Boosting': GradientBoostingRegressor(
+                n_estimators=100,
+                learning_rate=0.1,
+                random_state=42
+            ),
+            'Support Vector Regression': SVR(kernel='rbf', C=100)
+        }
+        
+        # Training with progress
+        progress_bar = st.progress(0)
+        model = model_configs[model_choice]
+        
+        with st.spinner(f"Training {model_choice}..."):
             model.fit(st.session_state.X_train, st.session_state.y_train)
+            progress_bar.progress(100)
+            
         st.session_state.model = model
-        st.success(f"{model_choice} trained!")
+        st.success(f"{model_choice} trained successfully!")
 
-# 6. Evaluation
+# Enhanced Evaluation
 if st.button("6. Evaluation"):
-    model = st.session_state.model
-    mtype = st.session_state.model_type
-    if model is None:
+    if st.session_state.model is None:
         st.error("Train a model first.")
     else:
-        if mtype in ['Logistic Regression', 'Linear Regression']:
-            X_test = st.session_state.X_test
-            y_test = st.session_state.y_test
-            y_pred = model.predict(X_test)
-            if mtype == 'Logistic Regression':
-                # Classification metrics
-                st.write(classification_report(y_test, y_pred))
-                cm = confusion_matrix(y_test, y_pred)
-                fig = px.imshow(cm, text_auto=True, title='Confusion Matrix')
-                st.plotly_chart(fig)
-                st.write("Accuracy:", accuracy_score(y_test, y_pred))
-            else:
-                # Regression metrics
-                mse = mean_squared_error(y_test, y_pred)
-                st.write(f"Mean Squared Error: {mse:.4f}")
-                fig = px.scatter(x=y_test, y=y_pred,
-                                 labels={'x':'Actual','y':'Predicted'},
-                                 title='Actual vs Predicted')
-                st.plotly_chart(fig)
-        else:
-            # K-Means visualization
-            labels = model.labels_
-            df_vis = st.session_state.X_test.copy()
-            df_vis['Cluster'] = labels
-            fig = px.scatter(df_vis, x=st.session_state.features[0], y=st.session_state.features[1],
-                             color='Cluster', title='Cluster Visualization')
+        model = st.session_state.model
+        X_test = st.session_state.X_test
+        y_test = st.session_state.y_test
+        
+        y_pred = model.predict(X_test)
+        
+        # Metrics
+        mse = mean_squared_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("MSE", f"{mse:.2f}")
+        col2.metric("R² Score", f"{r2:.2f}")
+        col3.metric("MAE", f"{mae:.2f}")
+        
+        # Visualization
+        fig = px.scatter(
+            x=y_test, y=y_pred,
+            trendline="ols",
+            labels={'x': 'Actual', 'y': 'Predicted'},
+            title="Actual vs Predicted Values"
+        )
+        st.plotly_chart(fig)
+        
+        # Feature Importance
+        if hasattr(model, 'feature_importances_'):
+            importance = pd.DataFrame({
+                'Feature': st.session_state.features,
+                'Importance': model.feature_importances_
+            }).sort_values('Importance', ascending=False)
+            
+            fig = px.bar(
+                importance, 
+                x='Importance', 
+                y='Feature', 
+                orientation='h',
+                title="Feature Importance Analysis"
+            )
             st.plotly_chart(fig)
 
-# 7. Results Visualization & Downloads
+
+# Enhanced Results Visualization
 if st.button("7. Results Visualization"):
-    model = st.session_state.model
-    mtype = st.session_state.model_type
-    X_test = st.session_state.X_test
-    if model is None:
-        st.error("Train and evaluate a model first.")
+    if st.session_state.model is None:
+        st.error("Train and evaluate first.")
     else:
-        if mtype in ['Logistic Regression', 'Linear Regression']:
-            y_pred = model.predict(X_test)
-            results_df = X_test.copy()
-            results_df['Prediction'] = y_pred
-            st.write(results_df.head())
-            # Download predictions
-            csv = results_df.to_csv(index=False).encode()
-            st.download_button("Download Predictions as CSV", data=csv, file_name="predictions.csv")
-            # Feature importance
-            coef = model.coef_[0] if mtype=='Logistic Regression' else model.coef_
-            fig = px.bar(x=st.session_state.features, y=coef, title='Feature Importance')
-            st.plotly_chart(fig)
-        else:
-            # K-Means download
-            labels = model.labels_
-            dl_df = X_test.copy()
-            dl_df['Cluster'] = labels
-            st.write(dl_df.head())
-            csv = dl_df.to_csv(index=False).encode()
-            st.download_button("Download Clusters as CSV", data=csv, file_name="clusters.csv")
-        # Download trained model
-        import io
-        buf = io.BytesIO()
-        joblib.dump(model, buf)
-        buf.seek(0)
-        st.download_button("Download Trained Model (.pkl)", data=buf, file_name="trained_model.pkl")
-
+        # Interactive prediction explorer
+        st.subheader("Prediction Explorer")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            feature_inputs = {}
+            for feature in st.session_state.features:
+                data_min = st.session_state.X_train[feature].min()
+                data_max = st.session_state.X_train[feature].max()
+                feature_inputs[feature] = st.slider(
+                    f"{feature}",
+                    min_value=float(data_min),
+                    max_value=float(data_max),
+                    value=float(st.session_state.X_train[feature].median())
+                )
+        
+        with col2:
+            input_df = pd.DataFrame([feature_inputs])
+            prediction = st.session_state.model.predict(input_df)[0]
+            st.metric("Predicted Mental Health Score", 
+                      f"{prediction:.1f}",
+                      help="Higher scores indicate better mental health")
+            
+            # Explanation
+            if hasattr(st.session_state.model, 'predict_proba'):
+                explainer = shap.Explainer(st.session_state.model)
+                shap_values = explainer(input_df)
+                fig, ax = plt.subplots()
+                shap.plots.waterfall(shap_values[0], show=False)
+                st.pyplot(fig)
+        
+        # Downloadable report
+        report = f"""
+        Model Evaluation Report
+        ------------------------
+        Model Type: {st.session_state.model_type}
+        Features Used: {', '.join(st.session_state.features)}
+        
+        Performance Metrics:
+        - Mean Squared Error: {mse:.2f}
+        - R² Score: {r2:.2f}
+        - Mean Absolute Error: {mae:.2f}
+        """
+        st.download_button(
+            "Download Evaluation Report",
+            data=report,
+            file_name="mental_health_model_report.txt"
+        )
 # %% [markdown]
 ## 4. Themed GIFs and Images
 
