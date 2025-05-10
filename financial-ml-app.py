@@ -141,21 +141,47 @@ if st.button("3. Feature Engineering"):
         except Exception as e:
             st.error(f"Error in feature engineering: {str(e)}")
             st.stop()
-# 4. Train/Test Split
+# 4. Updated Train/Test Split
 if st.button("4. Train/Test Split"):
-    df = st.session_state.data
-    if df is None or 'Target' not in df.columns:
-        st.error("Engineer features first.")
+    if st.session_state.data is None:
+        st.error("Preprocess data first.")
     else:
-        X = df[st.session_state.features]
-        y = df['Target']
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        st.session_state.X_train = X_train
-        st.session_state.X_test = X_test
-        st.session_state.y_train = y_train
-        st.session_state.y_test = y_test
-        fig = px.pie(names=['Train', 'Test'], values=[len(X_train), len(X_test)], title='Train/Test Split')
-        st.plotly_chart(fig)
+        df = st.session_state.data
+        # Check for required components
+        if 'target' not in df.columns or not st.session_state.features:
+            st.error("Run feature engineering first.")
+            st.write("Current dataframe columns:", list(df.columns))
+            st.write("Available features:", st.session_state.features)
+            st.stop()
+            
+        try:
+            X = df[st.session_state.features]
+            y = df['target']
+            
+            if X.empty or y.empty:
+                st.error("Features/target are empty - check feature engineering")
+                st.stop()
+                
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, 
+                test_size=0.2, 
+                random_state=42,
+                stratify=y if st.session_state.model_type == 'Logistic Regression' else None
+            )
+            
+            st.session_state.X_train = X_train
+            st.session_state.X_test = X_test
+            st.session_state.y_train = y_train
+            st.session_state.y_test = y_test
+            
+            fig = px.pie(names=['Train', 'Test'], 
+                        values=[len(X_train), len(X_test)],
+                        title=f'Train/Test Split ({len(X_train)}/{len(X_test)})')
+            st.plotly_chart(fig)
+            
+        except Exception as e:
+            st.error(f"Split failed: {str(e)}")
+            st.stop()
 
 # 5. Model Training
 if st.button("5. Model Training"):
