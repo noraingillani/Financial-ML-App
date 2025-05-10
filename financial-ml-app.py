@@ -6,13 +6,15 @@
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 import streamlit as st
 
-# 1. MUST BE FIRST STREAMLIT COMMAND
+# SINGLE PAGE CONFIG - MUST BE FIRST STREAMLIT COMMAND
 st.set_page_config(
     page_title="Universal ML Processor",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Rest of imports follow...
 
 # 2. Other imports AFTER page config
 import pandas as pd
