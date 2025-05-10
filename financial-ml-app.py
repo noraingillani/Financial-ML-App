@@ -5,12 +5,16 @@
 
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 import streamlit as st
+
+# Must be the first Streamlit command
 st.set_page_config(
-    page_title="💰 Smart Budget Tracker | AF3005",
-    page_icon="💸",
+    page_title="Universal ML Processor",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Rest of imports
 import pandas as pd
 import numpy as np
 import joblib
