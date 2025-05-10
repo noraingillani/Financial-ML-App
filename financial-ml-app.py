@@ -84,7 +84,7 @@ if st.button("2. Preprocessing"):
         st.success("Preprocessing complete: missing values dropped.")
         st.dataframe(df_clean.head())
 
-# 3. Feature Engineering (Modified with error handling)
+# 3. Feature Engineering for Mental Health Dataset
 if st.button("3. Feature Engineering"):
     if st.session_state.data is None:
         st.error("Run preprocessing first.")
@@ -92,7 +92,7 @@ if st.button("3. Feature Engineering"):
         df = st.session_state.data.copy()
         
         # Check for required columns
-        required_columns = {'Close'}
+        required_columns = {'mental_health_score', 'stress_level', 'sleep_quality'}
         missing_columns = required_columns - set(df.columns)
         
         if missing_columns:
@@ -101,21 +101,46 @@ if st.button("3. Feature Engineering"):
             st.stop()
             
         try:
-            # Create target: 1 if next-day close > today
-            df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-            # Simple features: 10-day MA and daily return
-            df['MA10'] = df['Close'].rolling(window=10).mean()
-            df['Return'] = df['Close'].pct_change()
-            df = df.dropna()
-            st.session_state.features = ['MA10', 'Return']
-            st.session_state.data = df
-            st.success("Features engineered: MA10, Return, Target.")
-            st.dataframe(df[['MA10', 'Return', 'Target']].head())
+            # Create target: Mental health score (regression)
+            df['target'] = df['mental_health_score']
+            
+            # Feature 1: Total screen time
+            df['total_screen_time'] = (
+                df['daily_screen_time_hours'] + 
+                df['phone_usage_hours'] + 
+                df['laptop_usage_hours'] +
+                df['tablet_usage_hours'] +
+                df['tv_usage_hours']
+            )
+            
+            # Feature 2: Sleep efficiency ratio
+            df['sleep_efficiency'] = df['sleep_quality'] / df['sleep_duration_hours']
+            
+            # Feature 3: Stress-sleep interaction
+            df['stress_sleep_interaction'] = df['stress_level'] * df['sleep_quality']
+            
+            # Feature 4: Healthy lifestyle score
+            df['healthy_lifestyle'] = (
+                df['physical_activity_hours_per_week'] +
+                df['mindfulness_minutes_per_day']/60 +
+                df['eats_healthy'] * 2
+            )
+            
+            # Select final features
+            st.session_state.features = [
+                'total_screen_time',
+                'sleep_efficiency',
+                'stress_sleep_interaction',
+                'healthy_lifestyle'
+            ]
+            
+            st.session_state.data = df.dropna()
+            st.success(f"Features engineered: {', '.join(st.session_state.features)}")
+            st.dataframe(df[st.session_state.features + ['target']].head())
             
         except Exception as e:
             st.error(f"Error in feature engineering: {str(e)}")
             st.stop()
-
 # 4. Train/Test Split
 if st.button("4. Train/Test Split"):
     df = st.session_state.data
