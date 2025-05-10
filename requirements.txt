@@ -9,3 +9,4 @@ shap==0.44.0
 matplotlib==3.8.0
 seaborn==0.13.1  # Added missing dependency
 python-dateutil==2.8.2
+scikit-learn==1.3.2  # Version containing all required classes
